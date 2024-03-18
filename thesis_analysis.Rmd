@@ -4,3 +4,217 @@ author: "Nhu Nguyen"
 date: "2024-03-18"
 output: github_document
 --- 
+
+
+```{r setup}
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(readr)
+library(skimr)
+```
+## loading dataset
+```{r}
+life_expect <- read.csv("/Users/nhunguyen/Desktop/mph_thesis/NYC_A.CSV")
+```
+
+```{r}
+life_expect
+```
+
+description:
+The life expectancy data is sourced from the U.S. Small-area Life Expectancy Estimates Project (USALEEP), a collaborative effort involving the National Center for Health Statistics (NCHS), the Robert Wood Johnson Foundation (RWJF), and the National Association for Public Health Statistics and Information Systems (NAPHSIS). This project aims to provide a novel measure of health based on geographic location.
+
+Through the USALEEP project, estimates of life expectancy at birth were generated for the majority of census tracts across the United States, covering the period from 2010 to 2015.
+
+The `life_expect` dataset encompasses data spanning from `2010 to 2015`. It comprises `r nrow(life_expect)` observations and `r ncol(life_expect)` variables, resulting in a total of `r nrow(life_expect)` * `ncol(life_expect)` data points. Notable variables within this dataset include `r colnames(life_expect)`.
+
+## loading predictor dataset
+```{r}
+predictors <- read.csv("/Users/nhunguyen/Desktop/mph_thesis/predictors.csv")
+```
+
+## merging predictor & outcome dataset into one
+```{r}
+merged_data <- merge(predictors, life_expect, by.x = "SID", by.y = "Tract.ID")
+```
+
+
+### EDA on life expectancy dataset; check if the datasets merged correctly
+```{r}
+  life_expect %>% 
+  skimr::skim()
+```
+
+```{r}
+  predictors %>% 
+  skimr::skim()
+```
+
+```{r}
+  merged_data %>% 
+  skimr::skim()
+```
+
+## spearman corrlation
+* using spearman correlation bc it measures the strength and direction of association between two variables without assuming a linear relationship
+* sd is zero -- no variability in the data
+```{r}
+merged_data %>%
+  map(~ cor(as.numeric(.x), merged_data$e.0, method = "spearman")) %>%
+  as_tibble() %>%
+  pivot_longer(prop_age_under18:ACCESS2_CrudePrev,
+               names_to = "variables",
+               values_to = "r") %>%
+  knitr::kable()
+```
+
+
+## running baseline model
+
+```{r}
+proposed_model <- lm(e.0. ~ prop_age_under18 +	prop_age_65plus +	female_led_hh_prop +	eng_lim_prop +	usentry_2010_prop + forborn_prop + uscitizen_no_prop +	disability_prop + single_parent_prop + publictrans_taxi_mcycle_bike_walk_prop + travel_time_work_minute +	prop_living_alone +	income1yr_neg_median +	poverty1yr_prop	+ service_manual_prop +	gini_index	+ unemployment_prop	+ education_less_hs_prop +	vehicle_avail_no_prop + pop_density	+ group_quarters_prop +	occ_room_1_01plus_prop  +	age_structure_2019 +	str_units_1att_2plus_mobile_boat_rv_van_prop +	str_units_20plus  +	move1yr_prop +	str_vacancy_prop +	CSMOKING_CrudePrev +	BINGE_CrudePrev +	LPA_CrudePrev	+ OBESITY_CrudePrev + SLEEP_CrudePrev +	BPHIGH_CrudePrev +	BPMED_CrudePrev	+ CANCER_CrudePrev+ CASTHMA_CrudePrev +	CHD_CrudePrev+STROKE_CrudePrev	+ COPD_CrudePrev +	DIABETES_CrudePrev +	HIGHCHOL_CrudePrev +	KIDNEY_CrudePrev +	MHLTH_CrudePrev +	PHLTH_CrudePrev +	TEETHLOST_CrudePrev +	CHECKUP_CrudePrev	+ COREM_CrudePrev	+ COREW_CrudePrev +	DENTAL_CrudePrev +	CERVICAL_CrudePrev +	CHOLSCREEN_CrudePrev +	COLON_SCREEN_CrudePrev +	MAMMOUSE_CrudePrev +	ACCESS2_CrudePrev , data = merged_data)
+```
+
+## result of baseline model
+```{r}
+summary(proposed_model)
+```
+## running correlation on some predictors
+*lifestyle (14)
+*gini index (20)
+*unemployment (23)
+*education (22)
+*population density (24)
+*population living in communual setting (25)
+*age structure (27)
+
+```{r}
+mydata <- merged_data[, c(14, 20, 23, 22, 24, 25, 27)]
+```
+
+```{r}
+cormat <- round(cor(mydata),2)
+head(cormat)
+```
+
+## output of correlation
+
+```{r}
+library(reshape2)
+melted_cormat <- melt(cormat)
+head(melted_cormat)
+```
+
+```{r}
+library(ggplot2)
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()
+```
+
+## lower triangle of correlation matrix
+```{r}
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+```
+
+## upper triangle of correlation matrix
+```{r}
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+```
+
+```{r}
+upper_tri <- get_upper_tri(cormat)
+upper_tri
+```
+
+## finalized correlation matrix 
+```{r}
+library(reshape2)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+# Heatmap
+library(ggplot2)
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Spearman\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+```
+
+## creating prediction model with new dataset with all health outcomes omitted
+
+```{r}
+nohealth <- predictors[, !colnames(predictors) %in% c('CASRN', 'Name', 'CSMOKING_CrudePrev',	'BINGE_CrudePrev',	'LPA_CrudePrev',	'OBESITY_CrudePrev',	'SLEEP_CrudePrev',	'BPHIGH_CrudePrev',	'BPMED_CrudePrev',	'CANCER_CrudePrev',	'CASTHMA_CrudePrev',	'CHD_CrudePrev',	'STROKE_CrudePrev',	'COPD_CrudePrev',	'DIABETES_CrudePrev',	'HIGHCHOL_CrudePrev',	'KIDNEY_CrudePrev',	'MHLTH_CrudePrev',	'PHLTH_CrudePrev',	'TEETHLOST_CrudePrev',	'CHECKUP_CrudePrev',	'COREM_CrudePrev',	'COREW_CrudePrev',	'DENTAL_CrudePrev',	'CERVICAL_CrudePrev',	'CHOLSCREEN_CrudePrev',	'COLON_SCREEN_CrudePrev',	'MAMMOUSE_CrudePrev',	'ACCESS2_CrudePrev')]
+
+merge_nohealth <- merge(nohealth, life_expect, by.x = "SID", by.y = "Tract.ID")
+
+Nohealthrecords <- na.omit(merge_nohealth)
+
+```
+
+```{r}
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+```
+
+
+```{r}
+# Installing package
+install.packages("caTools")       # For sampling the dataset
+install.packages("randomForest")  # For implementing random forest algorithm
+  
+# Loading package
+library(caTools)
+library(randomForest)
+  
+# Splitting data in train and test data
+split <- sample.split(Nohealthrecords, SplitRatio = 0.7)
+split
+  
+train <- subset(Nohealthrecords, split == "TRUE")
+test <- subset(Nohealthrecords, split == "FALSE")
+
+# Fitting Random Forest to the train dataset (Test 2)
+set.seed(120)  # Setting seed
+classifier_echo = randomForest(e.0.~., data=train,
+                             ntree = 500)
+  
+classifier_echo
+
+  
+# Predicting the Test set results
+y_pred_new = predict(classifier_echo,test)
+y_pred_new
+
+# Get the rmse
+install.packages("Metrics")
+library(Metrics)
+rmse(test$e.0., y_pred_new)
+  
+# Plotting model
+plot(classifier_echo)
+  
+# Importance plot
+importance(classifier_echo)
+  
+# Variable importance plot
+Life_expectancy_predictors <- classifier_echo
+varImpPlot(Life_expectancy_predictors,n.var=10)
+
+# Plot of 10 ten most important variables
+plot(test$e.0., y_pred_new, xlab="Observed life expectancy", ylab="Predicted life expectancy")
+abline(lm(test$e.0~y_pred_new))
+```
+
+
+
+
+
